@@ -1,0 +1,22 @@
+// todo-list.component.scss
+
+:host ::ng-deep {
+
+    .p-dialog {
+        width: 90vw;
+        margin: 1rem; 
+
+        @media screen and (min-width: 768px) {
+            width: 70vw;
+            max-width: 600px;
+        }
+    }
+
+    .p-dialog .p-inputtext,
+    .p-dialog .p-dropdown,
+    .p-dialog .p-calendar,
+    .p-dialog .p-multiselect,
+    .p-dialog p-inputtextarea > textarea {
+        width: 100% !important; 
+    }
+}

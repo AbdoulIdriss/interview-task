@@ -1,0 +1,245 @@
+<div class="card mt-4 mx-2">
+    <p-toast />
+    <p-toolbar styleClass="mb-6">
+        <ng-template #start>
+            <p-button label="New Todo" icon="pi pi-plus" class="mr-2" (onClick)="openNew()" />
+            <p-button
+                severity="danger"
+                label="Delete Selected"
+                icon="pi pi-trash"
+                outlined
+                (onClick)="deleteSelectedTodos()"
+                [disabled]="!selectedTodos || !selectedTodos.length"
+            />
+        </ng-template>
+
+        <ng-template #end>
+            <div class="flex-grow-1"></div>
+            <p-button label="Export Excel" icon="pi pi-file-excel" severity="secondary" (onClick)="exportExcel()" class="mr-2" />
+            <p-button label="Export PDF" icon="pi pi-file-pdf" severity="secondary" (onClick)="exportPdfWithAutoTable()" />
+        </ng-template>
+        
+        <div id="pdfContent" style="position: absolute; left: -9999px; top: -9999px; z-index: -1;">
+            <h2>Todo List Report</h2>
+            <p-table [value]="todos" [columns]="cols" [autoLayout]="true">
+                <ng-template pTemplate="header" let-columns>
+                    <tr>
+                        @for (col of columns; track col.field) {
+                            <th>
+                                {{ col.header }}
+                            </th>
+                        }
+                    </tr>
+                </ng-template>
+                <ng-template pTemplate="body" let-todo>
+                    <tr>
+                        <td>{{ todo.id }}</td>
+                        <td>{{ todo.title }}</td>
+                        <td>{{ todo.person?.name }}</td>
+                        <td>{{ todo.startDate }}</td>
+                        <td>{{ todo.endDate }}</td>
+                        <td>{{ todo.priority }}</td>
+                        <td>
+                            @for (label of todo.labels; track $index) {
+                                <span>{{ label }}{{ !$last ? ', ' : '' }}</span>
+                            }
+                        </td>
+                    </tr>
+                </ng-template>
+            </p-table>
+        </div>
+    </p-toolbar>
+
+    <p-table
+        #dt
+        [value]="todos"
+        [rows]="10"
+        [columns]="cols"
+        [paginator]="true"
+        [globalFilterFields]="['title', 'person.name', 'priority', 'labels']"
+        [tableStyle]="{ 'min-width': '75rem' }"
+        [(selection)]="selectedTodos"
+        [rowHover]="true"
+        dataKey="id"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} entries"
+        [showCurrentPageReport]="true"
+    >
+        <ng-template #caption>
+            <div class="flex items-center justify-between">
+                <h5 class="m-0">Manage Todos</h5>
+                <p-iconfield>
+                    <p-inputicon styleClass="pi pi-search" />
+                    <input
+                        pInputText
+                        type="text"
+                        #searchInput
+                        (input)="dt?.filterGlobal(searchInput.value, 'contains')"
+                        placeholder="Search..."
+                    />
+                </p-iconfield>
+            </div>
+        </ng-template>
+        <ng-template #header>
+            <tr>
+                <th style="width: 3rem">
+                    <p-tableHeaderCheckbox />
+                </th>
+                <th pSortableColumn="id" style="min-width: 8rem">
+                    ID
+                    <p-sortIcon field="id" />
+                </th>
+                <th pSortableColumn="title" style="min-width: 16rem">
+                    Title
+                    <p-sortIcon field="title" />
+                </th>
+                <th pSortableColumn="person.name" style="min-width: 12rem">
+                    Assigned To
+                    <p-sortIcon field="person.name" />
+                </th>
+                <th pSortableColumn="startDate" style="min-width: 10rem">
+                    Start Date
+                    <p-sortIcon field="startDate" />
+                </th>
+                <th pSortableColumn="endDate" style="min-width: 10rem">
+                    End Date
+                    <p-sortIcon field="endDate" />
+                </th>
+                <th pSortableColumn="priority" style="min-width: 10rem">
+                    Priority
+                    <p-sortIcon field="priority" />
+                </th>
+                <th pSortableColumn="labels" style="min-width: 15rem">
+                    Labels
+                    <p-sortIcon field="labels" />
+                </th>
+                <th style="min-width: 8rem">Actions</th>
+            </tr>
+        </ng-template>
+        <ng-template #body let-todo>
+            <tr>
+                <td style="width: 3rem">
+                    <p-tableCheckbox [value]="todo" />
+                </td>
+                <td>{{ todo.id }}</td>
+                <td>{{ todo.title }}</td>
+                <td>{{ todo.person?.name }}</td> <td>{{ todo.startDate | date : 'shortDate' }}</td>
+                <td>{{ todo.endDate ? (todo.endDate | date : 'shortDate') : 'N/A' }}</td>
+                <td>
+                    <p-tag [value]="todo.priority" [severity]="getPrioritySeverity(todo.priority)" />
+                </td>
+                <td>
+                    @for (label of todo.labels; track $index) {
+                        <p-tag [value]="label" />
+                        @if ($index < todo.labels.length - 1) {
+                            <span>, </span>
+                        }
+                    }
+                </td>
+                <td>
+                    <p-button icon="pi pi-pencil" class="mr-2" [rounded]="true" [outlined]="true" (click)="editTodo(todo)" />
+                    <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [outlined]="true" (click)="deleteTodo(todo)" />
+                </td>
+            </tr>
+        </ng-template>
+        <ng-template #summary>
+            <div class="flex items-center justify-between">In total there are {{ todos ? todos.length : 0 }} todos.</div>
+        </ng-template>
+    </p-table>
+
+    <p-dialog [(visible)]="todoDialog" header="Todo Details" [modal]="true" [maximizable]="true" 
+    [resizable]="true"  
+    [draggable]="true" 
+    [style]="{width: '50vw'}" [styleClass]="'p-dialog-responsive'"
+    [breakpoints]="{ '960px': '75vw', '640px': '90vw' }"
+>
+    <ng-template #content>
+        <div class="flex flex-col gap-6">
+            
+            <div>
+                <label for="title" class="block font-bold mb-3">Title</label>
+                <input type="text" pInputText id="title" [(ngModel)]="todo.title" required autofocus styleClass="w-full" />
+                @if (submitted && !todo.title) {
+                    <small class="text-red-500">Title is required.</small>
+                }
+            </div>
+            
+            <div>
+                <label for="description" class="block font-bold mb-3">Description</label>
+                <textarea id="description" pInputTextarea [(ngModel)]="todo.description" required rows="3" cols="20" class="w-full"></textarea>
+            </div>
+
+            <div>
+                <label for="person" class="block font-bold mb-3">Assigned Person</label>
+                <p-dropdown
+                    id="person"
+                    [(ngModel)]="todo.person"
+                    [options]="persons"
+                    optionLabel="name"
+                    [filter]="true"
+                    filterBy="name"
+                    placeholder="Select a Person"
+                    required
+                    styleClass="w-full"
+                ></p-dropdown>
+                @if (submitted && !todo.person.id) {
+                    <small class="text-red-500">Assigned person is required.</small>
+                }
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                <div>
+                    <label for="startDate" class="block font-bold mb-3">Start Date</label>
+                    <p-calendar id="startDate" [(ngModel)]="todo.startDate" dateFormat="yy-mm-dd" [showIcon]="true" styleClass="w-full" />
+                    @if (submitted && !todo.startDate) {
+                        <small class="text-red-500">Start Date is required.</small>
+                    }
+                </div>
+                
+                <div>
+                    <label for="endDate" class="block font-bold mb-3">End Date (Optional)</label>
+                    <p-calendar id="endDate" [(ngModel)]="todo.endDate" dateFormat="yy-mm-dd" [showIcon]="true" styleClass="w-full" />
+                </div>
+            </div>
+
+            <div>
+                <label for="priority" class="block font-bold mb-3">Priority</label>
+                <p-dropdown
+                    [(ngModel)]="todo.priority"
+                    inputId="priority"
+                    [options]="priorities"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Select a Priority"
+                    required
+                    styleClass="w-full"
+                />
+                @if (submitted && !todo.priority) {
+                    <small class="text-red-500">Priority is required.</small>
+                }
+            </div>
+
+            <div>
+                <label for="labels" class="block font-bold mb-3">Labels</label>
+                <p-multiSelect
+                    [(ngModel)]="todo.labels"
+                    inputId="labels"
+                    [options]="availableLabels"
+                    optionLabel="label"
+                    optionValue="value"
+                    display="chip"
+                    placeholder="Select Labels"
+                    styleClass="w-full"
+                />
+            </div>
+        </div>
+    </ng-template>
+
+    <ng-template #footer>
+        <p-button label="Cancel" icon="pi pi-times" text (click)="hideDialog()" />
+        <p-button label="Save" icon="pi pi-check" (click)="saveTodo()" />
+    </ng-template>
+</p-dialog>
+
+    <p-confirmDialog [style]="{ width: '450px' }" />
+</div>

@@ -12,7 +12,7 @@ export class TodoService {
 
   private api = 'http://localhost:3000/todos';
   
-  getAllPerson():Observable<Todo[]> {
+  getAllTodo():Observable<Todo[]> {
     return this.http.get<Todo[]>(this.api); //function to get all Todos
   }
 

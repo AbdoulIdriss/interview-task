@@ -1,4 +1,55 @@
 {
-    "persons": [],
-    "todos": []
+  "persons": [
+    {
+      "id": "1",
+      "name": "Alice Smith",
+      "email": "alice@example.com",
+      "phone": "111-222-3333"
+    },
+    {
+      "id": "2",
+      "name": "Bob Johnson",
+      "email": "bob@example.com",
+      "phone": "444-555-6666"
+    }
+  ],
+  "todos": [
+    {
+      "id": "101",
+      "title": "create good template ",
+      "person": {
+        "id": 2,
+        "name": "Bob Johnson",
+        "email": "bob@example.com",
+        "phone": "444-555-6666"
+      },
+      "startDate": "2025-06-11",
+      "endDate": "2025-06-12",
+      "priority": "Facile",
+      "labels": [
+        "HTML",
+        "CSS",
+        "NODE JS"
+      ],
+      "description": "you'll have to create a simple template "
+    },
+    {
+      "id": "102",
+      "title": "layout principles ",
+      "person": {
+        "id": 1,
+        "name": "Alice Smith",
+        "email": "alice@example.com",
+        "phone": "111-222-3333"
+      },
+      "startDate": "2025-06-16",
+      "endDate": "2025-06-25",
+      "priority": "Difficile",
+      "labels": [
+        "JQUERY",
+        "NODE JS"
+      ],
+      "description": "webfowbef"
+    }
+  ]
 }

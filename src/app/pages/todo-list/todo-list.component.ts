@@ -23,11 +23,16 @@ import { InputIconModule } from 'primeng/inputicon';
 import { CalendarModule } from 'primeng/calendar';
 import { MultiSelectModule } from 'primeng/multiselect';
 
-import * as XLSX from 'xlsx';
-import * as FileSaver from 'file-saver';
+
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
-import 'jspdf-autotable'; // Import this for better table support in PDF
+
+declare module 'jspdf' {
+  interface jsPDF {
+      autoTable: (options: any) => jsPDF;
+  }
+}
 
 interface AutoTableHookData {
   pageNumber: number;
@@ -221,57 +226,56 @@ export class TodoListComponent implements OnInit {
   
       // --- RECOMMENDED PDF EXPORT FOR TABLES (Using jsPDF-AutoTable) ---
       exportPdfWithAutoTable() {
-          const doc = new jsPDF();
-  
-          // Prepare data for jspdf-autotable
-          const head = [
-              this.cols.map(col => {
-                  // Map custom headers if needed, otherwise use regular header
-                  if (col.field === 'person.name') return 'Assigned To';
-                  if (col.field === 'labels') return 'Labels';
-                  return col.header;
-              })
-          ];
-  
-          const body = this.todos.map(todo => {
-              return this.cols.map(col => {
-                  if (col.field === 'person.name') {
-                      return todo.person?.name || '';
-                  }
-                  if (col.field === 'labels') {
-                      return todo.labels.join(', ');
-                  }
-                  return (todo as any)[col.field];
-              });
-          });
-  
-          (doc as any).autoTable({
-              head: head,
-              body: body,
-              startY: 20,
-              theme: 'striped',
-              headStyles: { fillColor: [50, 100, 200], textColor: 255, fontStyle: 'bold' },
-              styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' }, // Add overflow: 'linebreak' for long text
-              columnStyles: {
-                  0: { cellWidth: 15 },
-                  1: { cellWidth: 40 },
-                  2: { cellWidth: 30 },
-                  3: { cellWidth: 25 },
-                  4: { cellWidth: 25 },
-                  5: { cellWidth: 20 },
-                  6: { cellWidth: 35 }, 
-              },
-              didDrawPage: (data: AutoTableHookData) => {
-                  // Header
-                  doc.setFontSize(16);
-                  doc.text('Todo List Report', data.settings.margin.left, 10);
-                  doc.setFontSize(10);
-                  doc.text(`Date: ${new Date().toLocaleDateString()}`, data.settings.margin.left, 16);
-              }
-          });
-  
-          doc.save('todo_list_autotable.pdf');
-      }
+        console.log('--- PDF export function was called! ---');
+        // This helper function can safely get nested properties like 'person.name'
+        const getProperty = (obj: any, path: string) => {
+            return path.split('.').reduce((p, c) => p && p[c], obj);
+        }
+    
+        const doc = new jsPDF();
+    
+        // Prepare header and body data
+        const head = [this.cols.map(col => col.header)];
+        const body = this.todos.map(todo => {
+            return this.cols.map(col => {
+                if (col.field === 'labels') {
+                    // Handle the 'labels' array specifically
+                    return (todo.labels || []).join(', ');
+                }
+                // Use the helper to get data for all other fields, including 'person.name'
+                const value = getProperty(todo, col.field);
+                return value !== null && value !== undefined ? value : '';
+            });
+        });
+    
+        // Use the autoTable method without casting to 'any'
+        autoTable(doc, { // Pass the 'doc' instance to the autoTable function
+          head: head,
+          body: body,
+          startY: 20,
+          theme: 'striped',
+          headStyles: { fillColor: [50, 100, 200], textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+          columnStyles: {
+              0: { cellWidth: 15 },
+              1: { cellWidth: 40 },
+              2: { cellWidth: 30 },
+              3: { cellWidth: 25 },
+              4: { cellWidth: 25 },
+              5: { cellWidth: 20 },
+              6: { cellWidth: 'auto' },
+          },
+          didDrawPage: (data: any) => { // Use 'any' or define a more specific type if you prefer
+              // Header
+              doc.setFontSize(16);
+              doc.text('Todo List Report', data.settings.margin.left, 10);
+              doc.setFontSize(10);
+              doc.text(`Date: ${new Date().toLocaleDateString('en-CA')}`, data.settings.margin.left, 16);
+          }
+      });
+    
+        doc.save('todo_list_report.pdf');
+    }
 
     loadTodos() {
         this.todoService.getAllTodo().subscribe({

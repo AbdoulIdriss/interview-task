@@ -11,6 +11,12 @@
                 (onClick)="deleteSelectedTodos()"
                 [disabled]="!selectedTodos || !selectedTodos.length"
             />
+            <div class="filter-container ml-4 flex align-items-center gap-3">
+                <app-todo-filter
+                    [allPriorities]="allPrioritiesForFilter"
+                    (filterChange)="onFilterChange($event)"
+                ></app-todo-filter>
+            </div>
         </ng-template>
 
         <ng-template pTemplate="end">
@@ -21,8 +27,7 @@
         
         <div id="pdfContent" style="position: absolute; left: -9999px; top: -9999px; z-index: -1;">
             <h2>Todo List Report</h2>
-            <p-table [value]="todos" [columns]="cols" [autoLayout]="true">
-                <ng-template pTemplate="header" let-columns>
+            <p-table [value]="filteredTodos" [columns]="cols" [autoLayout]="true"> <ng-template pTemplate="header" let-columns>
                     <tr>
                         @for (col of columns; track col.field) {
                             <th>
@@ -51,8 +56,7 @@
 
     <p-table
         #dt
-        [value]="todos"
-        [rows]="10"
+        [value]="filteredTodos" [rows]="10"
         [columns]="cols"
         [paginator]="true"
         [globalFilterFields]="['title', 'person.name', 'priority', 'labels']"
@@ -136,7 +140,7 @@
             </tr>
         </ng-template>
         <ng-template #summary>
-            <div class="flex items-center justify-between">In total there are {{ todos ? todos.length : 0 }} todos.</div>
+            <div class="flex items-center justify-between">In total there are {{ filteredTodos ? filteredTodos.length : 0  }} todos.</div>
         </ng-template>
     </p-table>
 
@@ -230,8 +234,7 @@
                 <p-dropdown
                     [(ngModel)]="todo.priority"
                     inputId="priority"
-                    [options]="priorities"
-                    optionLabel="label"
+                    [options]="allPrioritiesForFilter"  optionLabel="label"
                     optionValue="value"
                     placeholder="Select a Priority"
                     [ngClass]="{'ng-invalid ng-dirty': submitted && !todo.priority}" 

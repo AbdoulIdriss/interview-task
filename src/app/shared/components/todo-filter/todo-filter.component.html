@@ -1,0 +1,43 @@
+<div class="filter-dropdown-container">
+    <p-button
+        type="button"
+        label="Filters"
+        icon="pi pi-filter"
+        (click)="op.toggle($event)"
+        class="p-button-outlined"
+        [style]="{'width': 'auto'}"
+    ></p-button>
+
+    <p-overlayPanel #op appendTo="body" [showCloseIcon]="true" [style]="{'width': '300px'}">
+        <ng-template pTemplate="content">
+            <div class="p-fluid filter-panel-content">
+                <div class="field mb-4">
+                    <label for="priorityFilter" class="block font-bold mb-2">Priority</label>
+                    <p-multiSelect
+                        id="priorityFilter"
+                        [options]="allPriorities"
+                        [(ngModel)]="selectedPriorities"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Select Priorities"
+                        (onChange)="onFilterValueChange()"
+                        display="chip"
+                        [style]="{'width': '100%'}"
+                    />
+                </div>
+            
+                <div class="field-checkbox mb-3 flex align-items-center">
+                    <p-inputSwitch [(ngModel)]="showCompletedTasks" (onChange)="onFilterValueChange()" inputId="showCompletedTasks" />
+                    <label for="showCompletedTasks" class="ml-2">Show Completed Tasks</label>
+                </div>
+            
+                <div class="field-checkbox mb-4 flex align-items-center">
+                    <p-inputSwitch [(ngModel)]="showInProgressTasks" (onChange)="onFilterValueChange()" inputId="showInProgressTasks" />
+                    <label for="showInProgressTasks" class="ml-2">Show In Progress Tasks</label>
+                </div>
+            
+                <p-button label="Clear Filters" icon="pi pi-filter-slash" outlined (click)="clearFilters()" class="w-full" />
+            </div>
+        </ng-template>
+    </p-overlayPanel>
+</div>

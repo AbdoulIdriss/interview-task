@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnInit, ViewChil
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { Todo, Priority, Label } from '../../models/todo';
 import { Person } from '../../models/person';
-import { TodoService } from '../../services/todo.service'; // Adjust path for TodoService
-import { PersonService } from '../../services/person.service'; // Import your PersonService
+import { TodoService } from '../../services/todo.service';
+import { PersonService } from '../../services/person.service';
 
 import { TableModule, Table } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
@@ -14,7 +14,6 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { CommonModule } from '@angular/common';
-import { FileUploadModule } from 'primeng/fileupload';
 import { DropdownModule } from 'primeng/dropdown';
 import { TagModule } from 'primeng/tag';
 import { FormsModule } from '@angular/forms';
@@ -22,34 +21,35 @@ import { IconFieldModule } from 'primeng/iconfield';
 import { InputIconModule } from 'primeng/inputicon';
 import { CalendarModule } from 'primeng/calendar';
 import { MultiSelectModule } from 'primeng/multiselect';
-import { AutoCompleteModule } from 'primeng/autocomplete'; // Import AutoCompleteModule
-import { CheckboxModule } from 'primeng/checkbox'; // Import CheckboxModule
-
+import { AutoCompleteModule } from 'primeng/autocomplete';
+import { CheckboxModule } from 'primeng/checkbox';
+import { InputSwitchModule } from 'primeng/inputswitch';
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { TodoFilter, TodoFilterComponent } from '../../shared/components/todo-filter/todo-filter.component';
 
 declare module 'jspdf' {
-  interface jsPDF {
-      autoTable: (options: any) => jsPDF;
-  }
+    interface jsPDF {
+        autoTable: (options: any) => jsPDF;
+    }
 }
 
 interface AutoTableHookData {
-  pageNumber: number;
-  pageCount: number;
-  settings: {
-      margin: {
-          left: number;
-          right: number;
-          top: number;
-          bottom: number;
-      };
+    pageNumber: number;
+    pageCount: number;
+    settings: {
+        margin: {
+            left: number;
+            right: number;
+            top: number;
+            bottom: number;
+        };
 
-  };
-  table: any; 
-  cursor: { x: number, y: number };
+    };
+    table: any; 
+    cursor: { x: number, y: number };
 
 }
 
@@ -77,7 +77,6 @@ interface ExportColumn {
         ToolbarModule,
         ConfirmDialogModule,
         InputTextModule,
-        InputTextModule,
         CommonModule,
         DropdownModule,
         TagModule,
@@ -86,10 +85,12 @@ interface ExportColumn {
         InputIconModule,
         CalendarModule,
         MultiSelectModule,
-        AutoCompleteModule, // Add AutoCompleteModule here
-        CheckboxModule, // Add CheckboxModule here
+        AutoCompleteModule,
+        CheckboxModule,
+        TodoFilterComponent,
+        InputSwitchModule,
     ],
-    providers: [MessageService, ConfirmationService, TodoService, PersonService], // Add PersonService here
+    providers: [MessageService, ConfirmationService, TodoService, PersonService],
     styles: [
         `:host ::ng-deep .p-dialog .todo-details {
             width: 100%;
@@ -107,18 +108,26 @@ export class TodoListComponent implements OnInit {
 
     todoDialog: boolean = false;
 
-    todos: Todo[] = [];
+    allTodos: Todo[] = []; // Stores all fetched todos
+    filteredTodos: Todo[] = [];
 
-    todo: Todo = this.newTodo(); // Initialize with a new blank todo
+    todo: Todo = this.newTodo();
 
     selectedTodos: Todo[] | null = null;
 
     submitted: boolean = false;
 
-    priorities: { label: string; value: Priority }[];
+    allPrioritiesForFilter: { label: string; value: Priority }[];
+    
     availableLabels: { label: string; value: Label }[];
-    persons: Person[] = []; // Array to hold fetched persons
-    filteredPersons: Person[] = []; // New property for autocomplete suggestions
+    persons: Person[] = [];
+    filteredPersons: Person[] = [];
+
+    currentFilters: TodoFilter = {
+        selectedPriorities: [],
+        showCompleted: false,
+        showInProgress: false,
+    };
 
     @ViewChild('dt') dt!: Table;
 
@@ -128,12 +137,13 @@ export class TodoListComponent implements OnInit {
 
     constructor(
         private todoService: TodoService,
-        private personService: PersonService, // Inject PersonService
+        private personService: PersonService,
         private messageService: MessageService,
         private confirmationService: ConfirmationService,
         private cd: ChangeDetectorRef
     ) {
-        this.priorities = Object.values(Priority).map(p => ({ label: p, value: p }));
+        // Initialize allPrioritiesForFilter here
+        this.allPrioritiesForFilter = Object.values(Priority).map(p => ({ label: p, value: p }));
         this.availableLabels = Object.values(Label).map(l => ({ label: l, value: l }));
     }
 
@@ -143,7 +153,7 @@ export class TodoListComponent implements OnInit {
 
     ngOnInit() {
         this.loadTodos();
-        this.loadPersons(); // Load persons when the component initializes
+        this.loadPersons();
 
         this.cols = [
             { field: 'id', header: 'ID' },
@@ -153,7 +163,7 @@ export class TodoListComponent implements OnInit {
             { field: 'endDate', header: 'End Date' },
             { field: 'priority', header: 'Priority' },
             { field: 'labels', header: 'Labels' },
-            { field: 'status', header: 'Status' }, // Add new column definition for status
+            { field: 'status', header: 'Status' },
         ];
 
         this.exportColumns = this.cols.map((col) => ({ title: col.header, dataKey: col.field }));
@@ -161,17 +171,16 @@ export class TodoListComponent implements OnInit {
 
     exportExcel() {
       import('xlsx').then(xlsx => {
-          // Flatten the data for Excel export, especially for nested properties like 'person.name' and 'labels'
-          const dataToExport = this.todos.map(todo => {
+          const dataToExport = this.filteredTodos.map(todo => { // Export filtered todos
               return {
                   ID: todo.id,
                   Title: todo.title,
-                  'Assigned To': todo.person?.name || '', // Handle potentially null person
+                  'Assigned To': todo.person?.name || '',
                   'Start Date': todo.startDate,
-                  'End Date': todo.endDate || '', // Handle potentially undefined endDate
+                  'End Date': todo.endDate || '',
                   Priority: todo.priority,
-                  Labels: todo.labels.join(', '), // Convert array of labels to a single string
-                  Status: this.getTaskStatus(todo) // Add status to Excel export
+                  Labels: todo.labels.join(', '),
+                  Status: this.getTaskStatus(todo)
               };
           });
 
@@ -193,54 +202,45 @@ export class TodoListComponent implements OnInit {
       });
     }
 
-        // --- PDF EXPORT (Using html2canvas for general HTML content) ---
-        async exportPdf() {
-          // Option 1: Using html2canvas to capture the hidden p-table structure
-          const data = document.getElementById('pdfContent'); // Get the HTML element by its ID
-  
-          if (data) {
-              html2canvas(data, {
-                  scale: 2, // Increase scale for better resolution in PDF
-                  useCORS: true // Important if images are served from a different origin
-              }).then(canvas => {
-                  const imgData = canvas.toDataURL('image/png');
-                  const pdf = new jsPDF('p', 'mm', 'a4'); // 'p' for portrait, 'mm' for millimeters, 'a4' size
-                  const imgWidth = 208; // A4 width in mm (210mm total, with 1mm margin on each side)
-                  const pageHeight = 295; // A4 height in mm (297mm total)
-                  const imgHeight = canvas.height * imgWidth / canvas.width;
-                  let heightLeft = imgHeight;
-  
-                  let position = 0;
-  
-                  pdf.addImage(imgData, 'PNG', 1, position, imgWidth, imgHeight); // Add image to PDF
-                  heightLeft -= pageHeight;
-  
-                  while (heightLeft >= 0) {
-                      position = heightLeft - imgHeight;
-                      pdf.addPage();
-                      pdf.addImage(imgData, 'PNG', 1, position, imgWidth, imgHeight);
-                      heightLeft -= pageHeight;
-                  }
-  
-                  pdf.save('todo_list.pdf');
-              });
-          } else {
-              console.error("Element with ID 'pdfContent' not found for PDF export.");
-              this.messageService.add({
-                  severity: 'error',
-                  summary: 'Export Error',
-                  detail: 'PDF content not found. Please ensure the #pdfContent div is present.',
-                  life: 5000,
-              });
-          }
-      }
-  
-      // --- RECOMMENDED PDF EXPORT FOR TABLES (Using jsPDF-AutoTable) ---
-      exportPdfWithAutoTable() {
+    async exportPdf() {
+        const data = document.getElementById('pdfContent');
+        if (data) {
+            html2canvas(data, {
+                scale: 2,
+                useCORS: true
+            }).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const imgWidth = 208;
+                const pageHeight = 295;
+                const imgHeight = canvas.height * imgWidth / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+                pdf.addImage(imgData, 'PNG', 1, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 1, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+                pdf.save('todo_list.pdf');
+            });
+        } else {
+            console.error("Element with ID 'pdfContent' not found for PDF export.");
+            this.messageService.add({
+                severity: 'error',
+                summary: 'Export Error',
+                detail: 'PDF content not found. Please ensure the #pdfContent div is present.',
+                life: 5000,
+            });
+        }
+    }
+
+    exportPdfWithAutoTable() {
         console.log('--- PDF export function was called! ---');
-        // This helper function can safely get nested properties like 'person.name'
         const getProperty = (obj: any, path: string) => {
-            if (path === 'status') { // Handle 'status' field specifically for PDF export
+            if (path === 'status') {
                 return this.getTaskStatus(obj);
             }
             return path.split('.').reduce((p, c) => p && p[c], obj);
@@ -248,22 +248,18 @@ export class TodoListComponent implements OnInit {
     
         const doc = new jsPDF();
     
-        // Prepare header and body data
         const head = [this.cols.map(col => col.header)];
-        const body = this.todos.map(todo => {
+        const body = this.filteredTodos.map(todo => { // Export filtered todos
             return this.cols.map(col => {
                 if (col.field === 'labels') {
-                    // Handle the 'labels' array specifically
                     return (todo.labels || []).join(', ');
                 }
-                // Use the helper to get data for all other fields, including 'person.name' and 'status'
                 const value = getProperty(todo, col.field);
                 return value !== null && value !== undefined ? value : '';
             });
         });
     
-        // Use the autoTable method without casting to 'any'
-        autoTable(doc, { // Pass the 'doc' instance to the autoTable function
+        autoTable(doc, {
           head: head,
           body: body,
           startY: 20,
@@ -278,10 +274,9 @@ export class TodoListComponent implements OnInit {
               4: { cellWidth: 25 },
               5: { cellWidth: 20 },
               6: { cellWidth: 'auto' },
-              7: { cellWidth: 25 }, // Adjust column width for status if needed
+              7: { cellWidth: 25 },
           },
-          didDrawPage: (data: any) => { // Use 'any' or define a more specific type if you prefer
-              // Header
+          didDrawPage: (data: any) => {
               doc.setFontSize(16);
               doc.text('Todo List Report', data.settings.margin.left, 10);
               doc.setFontSize(10);
@@ -295,7 +290,8 @@ export class TodoListComponent implements OnInit {
     loadTodos() {
         this.todoService.getAllTodo().subscribe({
             next: (data) => {
-                this.todos = data;
+                this.allTodos = data; 
+                this.applyFilters();
                 this.cd.markForCheck();
             },
             error: (err) => {
@@ -338,7 +334,7 @@ export class TodoListComponent implements OnInit {
             priority: Priority.Facile,
             labels: [],
             description: '',
-            completed: false, // Initialize completed to false
+            completed: false,
         };
     }
 
@@ -354,7 +350,7 @@ export class TodoListComponent implements OnInit {
             person: todo.person ? { ...todo.person } : { id: 0, name: '', email: '', phone: '' },
             startDate: todo.startDate ? new Date(todo.startDate).toISOString().split('T')[0] : '',
             endDate: todo.endDate ? new Date(todo.endDate).toISOString().split('T')[0] : undefined,
-            completed: todo.completed ?? false, // Ensure it's always explicitly a boolean
+            completed: todo.completed ?? false,
         };
         this.todoDialog = true;
     }
@@ -369,7 +365,7 @@ export class TodoListComponent implements OnInit {
 
                 Promise.all(idsToDelete.map(id => this.todoService.deleteTodo(id).toPromise()))
                     .then(() => {
-                        this.todos = this.todos.filter((val) => !this.selectedTodos?.includes(val));
+                        this.allTodos = this.allTodos.filter((val) => !this.selectedTodos?.includes(val)); // Update allTodos
                         this.selectedTodos = null;
                         this.messageService.add({
                             severity: 'success',
@@ -377,6 +373,7 @@ export class TodoListComponent implements OnInit {
                             detail: 'Todos Deleted',
                             life: 3000,
                         });
+                        this.applyFilters();
                         this.cd.markForCheck();
                     })
                     .catch((err) => {
@@ -405,7 +402,7 @@ export class TodoListComponent implements OnInit {
             accept: () => {
                 this.todoService.deleteTodo(todo.id).subscribe({
                     next: () => {
-                        this.todos = this.todos.filter((val) => val.id !== todo.id);
+                        this.allTodos = this.allTodos.filter((val) => val.id !== todo.id); // Update allTodos
                         this.todo = this.newTodo();
                         this.messageService.add({
                             severity: 'success',
@@ -413,6 +410,7 @@ export class TodoListComponent implements OnInit {
                             detail: 'Todo Deleted',
                             life: 3000,
                         });
+                        this.applyFilters(); 
                         this.cd.markForCheck();
                     },
                     error: (err) => {
@@ -431,8 +429,8 @@ export class TodoListComponent implements OnInit {
 
     findIndexById(id: number): number {
         let index = -1;
-        for (let i = 0; i < this.todos.length; i++) {
-            if (this.todos[i].id === id) {
+        for (let i = 0; i < this.allTodos.length; i++) { // Search in allTodos
+            if (this.allTodos[i].id === id) {
                 index = i;
                 break;
             }
@@ -453,14 +451,10 @@ export class TodoListComponent implements OnInit {
         }
     }
 
-    // --- New Methods for Validation and Logic ---
-
-    // Validates if the title has at least 3 characters after trimming
     isTitleValid(): boolean {
         return this.todo.title?.trim().length >= 3;
     }
 
-    // Filters persons for the Autocomplete component
     searchPerson(event: { query: string }) {
         let filtered: Person[] = [];
         let query = event.query;
@@ -474,29 +468,17 @@ export class TodoListComponent implements OnInit {
         this.filteredPersons = filtered;
     }
 
-    // Handles the change event for the 'completed' checkbox
     onCompletedChange(event: any) {
         if (event.checked) {
-            // If marked as completed, set endDate to today's date if not already set
             if (!this.todo.endDate) {
                 this.todo.endDate = new Date().toISOString().split('T')[0];
             }
         }
-        // No else block needed here as endDate can be cleared by user if unchecked
-        // and if it was already set, we don't want to clear it automatically just because it's unchecked.
-        // If you want to clear it when unchecked, uncomment the line below:
-        // else { this.todo.endDate = undefined; }
     }
 
-
-    /**
-     * Determines the status of a task based on its dates and completion status.
-     * @param todo The Todo object.
-     * @returns 'Finished', 'In Progress', 'Upcoming', or 'Overdue'.
-     */
     getTaskStatus(todo: Todo): string {
         const today = new Date();
-        today.setHours(0, 0, 0, 0); // Normalize today to start of day
+        today.setHours(0, 0, 0, 0);
 
         const startDate = todo.startDate ? new Date(todo.startDate) : null;
         if (startDate) startDate.setHours(0, 0, 0, 0);
@@ -504,61 +486,79 @@ export class TodoListComponent implements OnInit {
         const endDate = todo.endDate ? new Date(todo.endDate) : null;
         if (endDate) endDate.setHours(0, 0, 0, 0);
 
-        // Rule 1: If explicitly marked as completed
         if (todo.completed) {
             return 'Finished';
         }
 
-        // Rule 2: If there's an endDate and it's in the past
         if (endDate && endDate < today) {
-            return 'Finished'; // Consider it finished if its end date is past
+            return 'Finished';
         }
 
-        // Rule 3: If startDate is in the past or today, and no endDate or endDate is in the future
         if (startDate && startDate <= today && (!endDate || endDate >= today)) {
             return 'In Progress';
         }
 
-        // Rule 4: If startDate is in the future
         if (startDate && startDate > today) {
             return 'Upcoming';
         }
 
-        // Default: If no start date, or complex edge cases, you might categorize it differently
-        return 'N/A'; // Or 'Not Started' if that fits better
+        return 'N/A';
     }
 
-    /**
-     * Returns the severity for the p-tag based on the task status.
-     * @param todo The Todo object.
-     * @returns 'success', 'warning', 'danger', 'info', or 'secondary'.
-     */
     getTaskStatusSeverity(todo: Todo): string {
         const status = this.getTaskStatus(todo);
         switch (status) {
             case 'Finished':
                 return 'success';
             case 'In Progress':
-                return 'info'; // or 'warning' depending on preference
+                return 'info';
             case 'Upcoming':
-                return 'secondary'; // Grey for upcoming
-            // You might add an 'Overdue' status and assign 'danger'
-            case 'Overdue': // Example if you decide to add an 'Overdue' status
+                return 'secondary';
+            case 'Overdue':
                 return 'danger';
             default:
                 return 'info';
         }
     }
 
+    /**
+     * Handles the filter change event emitted by the TodoFilterComponent.
+     * @param filters
+     */
+    onFilterChange(filters: TodoFilter): void {
+        this.currentFilters = filters;
+        this.applyFilters();
+    }
+
+    applyFilters(): void {
+        let tempTodos = [...this.allTodos]; // Start with a fresh copy of all todos
+
+        // Filter by Priority
+        if (this.currentFilters.selectedPriorities && this.currentFilters.selectedPriorities.length > 0) {
+            tempTodos = tempTodos.filter(todo =>
+                this.currentFilters.selectedPriorities.includes(todo.priority)
+            );
+        }
+
+        // Filter by Completed/In Progress Status
+        if (this.currentFilters.showCompleted) {
+            tempTodos = tempTodos.filter(todo => !!todo.completed);
+        } else if (this.currentFilters.showInProgress) {
+            tempTodos = tempTodos.filter(todo => this.getTaskStatus(todo) === 'In Progress');
+        }
+
+        this.filteredTodos = tempTodos;
+        this.cd.markForCheck(); // Trigger change detection
+    }
+
     saveTodo() {
         this.submitted = true;
 
-        // Perform all validations
         const isFormValid = 
             this.isTitleValid() &&
-            this.todo.person?.id !== 0 && // Check if a person is selected (id is not 0 for placeholder)
-            !!this.todo.startDate && // Check if startDate is truthy
-            !!this.todo.priority; // Check if priority is truthy
+            this.todo.person?.id !== 0 &&
+            !!this.todo.startDate &&
+            !!this.todo.priority;
 
         if (isFormValid) {
             const todoToSave: Todo = {
@@ -568,12 +568,11 @@ export class TodoListComponent implements OnInit {
             };
 
             if (todoToSave.id) {
-                // Update existing todo
                 this.todoService.updateTodo(todoToSave).subscribe({
                     next: (updatedTodo) => {
                         const index = this.findIndexById(updatedTodo.id);
                         if (index > -1) {
-                            this.todos[index] = updatedTodo;
+                            this.allTodos[index] = updatedTodo; // Update allTodos
                         }
                         this.messageService.add({
                             severity: 'success',
@@ -581,7 +580,7 @@ export class TodoListComponent implements OnInit {
                             detail: 'Todo Updated',
                             life: 3000,
                         });
-                        this.todos = [...this.todos];
+                        this.applyFilters(); // Re-apply filters after update
                         this.cd.markForCheck();
                         this.hideDialog();
                     },
@@ -596,17 +595,16 @@ export class TodoListComponent implements OnInit {
                     },
                 });
             } else {
-                // Create new todo
                 this.todoService.createTodo(todoToSave).subscribe({
                     next: (newTodo) => {
-                        this.todos.push(newTodo);
+                        this.allTodos.push(newTodo); // Add to allTodos
                         this.messageService.add({
                             severity: 'success',
                             summary: 'Successful',
                             detail: 'Todo Created',
                             life: 3000,
                         });
-                        this.todos = [...this.todos];
+                        this.applyFilters(); 
                         this.cd.markForCheck();
                         this.hideDialog();
                     },
@@ -622,7 +620,6 @@ export class TodoListComponent implements OnInit {
                 });
             }
         } else {
-            // Form is invalid, display a general error message
             this.messageService.add({
                 severity: 'error',
                 summary: 'Validation Error',

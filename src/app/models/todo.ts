@@ -12,4 +12,5 @@ export interface Todo {
     priority: Priority;
     labels: Label[];
     description: string;
+    completed?: false; 
 }

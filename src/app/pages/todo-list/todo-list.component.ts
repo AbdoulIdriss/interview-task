@@ -22,6 +22,8 @@ import { IconFieldModule } from 'primeng/iconfield';
 import { InputIconModule } from 'primeng/inputicon';
 import { CalendarModule } from 'primeng/calendar';
 import { MultiSelectModule } from 'primeng/multiselect';
+import { AutoCompleteModule } from 'primeng/autocomplete'; // Import AutoCompleteModule
+import { CheckboxModule } from 'primeng/checkbox'; // Import CheckboxModule
 
 
 import jsPDF from 'jspdf';
@@ -84,6 +86,8 @@ interface ExportColumn {
         InputIconModule,
         CalendarModule,
         MultiSelectModule,
+        AutoCompleteModule, // Add AutoCompleteModule here
+        CheckboxModule, // Add CheckboxModule here
     ],
     providers: [MessageService, ConfirmationService, TodoService, PersonService], // Add PersonService here
     styles: [
@@ -91,7 +95,11 @@ interface ExportColumn {
             width: 100%;
             margin: 0 auto 2rem auto;
             display: block;
-        }`,
+        }
+        :host ::ng-deep .p-error {
+            color: var(--red-500);
+        }
+        `,
     ],
     changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -110,6 +118,7 @@ export class TodoListComponent implements OnInit {
     priorities: { label: string; value: Priority }[];
     availableLabels: { label: string; value: Label }[];
     persons: Person[] = []; // Array to hold fetched persons
+    filteredPersons: Person[] = []; // New property for autocomplete suggestions
 
     @ViewChild('dt') dt!: Table;
 
@@ -144,6 +153,7 @@ export class TodoListComponent implements OnInit {
             { field: 'endDate', header: 'End Date' },
             { field: 'priority', header: 'Priority' },
             { field: 'labels', header: 'Labels' },
+            { field: 'status', header: 'Status' }, // Add new column definition for status
         ];
 
         this.exportColumns = this.cols.map((col) => ({ title: col.header, dataKey: col.field }));
@@ -160,7 +170,8 @@ export class TodoListComponent implements OnInit {
                   'Start Date': todo.startDate,
                   'End Date': todo.endDate || '', // Handle potentially undefined endDate
                   Priority: todo.priority,
-                  Labels: todo.labels.join(', ') // Convert array of labels to a single string
+                  Labels: todo.labels.join(', '), // Convert array of labels to a single string
+                  Status: this.getTaskStatus(todo) // Add status to Excel export
               };
           });
 
@@ -229,6 +240,9 @@ export class TodoListComponent implements OnInit {
         console.log('--- PDF export function was called! ---');
         // This helper function can safely get nested properties like 'person.name'
         const getProperty = (obj: any, path: string) => {
+            if (path === 'status') { // Handle 'status' field specifically for PDF export
+                return this.getTaskStatus(obj);
+            }
             return path.split('.').reduce((p, c) => p && p[c], obj);
         }
     
@@ -242,7 +256,7 @@ export class TodoListComponent implements OnInit {
                     // Handle the 'labels' array specifically
                     return (todo.labels || []).join(', ');
                 }
-                // Use the helper to get data for all other fields, including 'person.name'
+                // Use the helper to get data for all other fields, including 'person.name' and 'status'
                 const value = getProperty(todo, col.field);
                 return value !== null && value !== undefined ? value : '';
             });
@@ -264,6 +278,7 @@ export class TodoListComponent implements OnInit {
               4: { cellWidth: 25 },
               5: { cellWidth: 20 },
               6: { cellWidth: 'auto' },
+              7: { cellWidth: 25 }, // Adjust column width for status if needed
           },
           didDrawPage: (data: any) => { // Use 'any' or define a more specific type if you prefer
               // Header
@@ -314,16 +329,16 @@ export class TodoListComponent implements OnInit {
     }
 
     newTodo(): Todo {
-        // Initialize person with a default or empty Person object
         return {
             id: 0,
             title: '',
-            person: { id: 0, name: '', email: '', phone: '' }, // Initialize with an empty Person object
+            person: { id: 0, name: '', email: '', phone: '' },
             startDate: new Date().toISOString().split('T')[0],
             endDate: undefined,
             priority: Priority.Facile,
             labels: [],
             description: '',
+            completed: false, // Initialize completed to false
         };
     }
 
@@ -334,12 +349,12 @@ export class TodoListComponent implements OnInit {
     }
 
     editTodo(todo: Todo) {
-        //  copy the todo object for editing
         this.todo = {
             ...todo,
-            person: { ...todo.person }, // Deep copy the person object
+            person: todo.person ? { ...todo.person } : { id: 0, name: '', email: '', phone: '' },
             startDate: todo.startDate ? new Date(todo.startDate).toISOString().split('T')[0] : '',
             endDate: todo.endDate ? new Date(todo.endDate).toISOString().split('T')[0] : undefined,
+            completed: todo.completed ?? false, // Ensure it's always explicitly a boolean
         };
         this.todoDialog = true;
     }
@@ -438,73 +453,182 @@ export class TodoListComponent implements OnInit {
         }
     }
 
+    // --- New Methods for Validation and Logic ---
+
+    // Validates if the title has at least 3 characters after trimming
+    isTitleValid(): boolean {
+        return this.todo.title?.trim().length >= 3;
+    }
+
+    // Filters persons for the Autocomplete component
+    searchPerson(event: { query: string }) {
+        let filtered: Person[] = [];
+        let query = event.query;
+
+        for (let i = 0; i < this.persons.length; i++) {
+            let person = this.persons[i];
+            if (person.name.toLowerCase().indexOf(query.toLowerCase()) == 0) {
+                filtered.push(person);
+            }
+        }
+        this.filteredPersons = filtered;
+    }
+
+    // Handles the change event for the 'completed' checkbox
+    onCompletedChange(event: any) {
+        if (event.checked) {
+            // If marked as completed, set endDate to today's date if not already set
+            if (!this.todo.endDate) {
+                this.todo.endDate = new Date().toISOString().split('T')[0];
+            }
+        }
+        // No else block needed here as endDate can be cleared by user if unchecked
+        // and if it was already set, we don't want to clear it automatically just because it's unchecked.
+        // If you want to clear it when unchecked, uncomment the line below:
+        // else { this.todo.endDate = undefined; }
+    }
+
+
+    /**
+     * Determines the status of a task based on its dates and completion status.
+     * @param todo The Todo object.
+     * @returns 'Finished', 'In Progress', 'Upcoming', or 'Overdue'.
+     */
+    getTaskStatus(todo: Todo): string {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Normalize today to start of day
+
+        const startDate = todo.startDate ? new Date(todo.startDate) : null;
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+
+        const endDate = todo.endDate ? new Date(todo.endDate) : null;
+        if (endDate) endDate.setHours(0, 0, 0, 0);
+
+        // Rule 1: If explicitly marked as completed
+        if (todo.completed) {
+            return 'Finished';
+        }
+
+        // Rule 2: If there's an endDate and it's in the past
+        if (endDate && endDate < today) {
+            return 'Finished'; // Consider it finished if its end date is past
+        }
+
+        // Rule 3: If startDate is in the past or today, and no endDate or endDate is in the future
+        if (startDate && startDate <= today && (!endDate || endDate >= today)) {
+            return 'In Progress';
+        }
+
+        // Rule 4: If startDate is in the future
+        if (startDate && startDate > today) {
+            return 'Upcoming';
+        }
+
+        // Default: If no start date, or complex edge cases, you might categorize it differently
+        return 'N/A'; // Or 'Not Started' if that fits better
+    }
+
+    /**
+     * Returns the severity for the p-tag based on the task status.
+     * @param todo The Todo object.
+     * @returns 'success', 'warning', 'danger', 'info', or 'secondary'.
+     */
+    getTaskStatusSeverity(todo: Todo): string {
+        const status = this.getTaskStatus(todo);
+        switch (status) {
+            case 'Finished':
+                return 'success';
+            case 'In Progress':
+                return 'info'; // or 'warning' depending on preference
+            case 'Upcoming':
+                return 'secondary'; // Grey for upcoming
+            // You might add an 'Overdue' status and assign 'danger'
+            case 'Overdue': // Example if you decide to add an 'Overdue' status
+                return 'danger';
+            default:
+                return 'info';
+        }
+    }
+
     saveTodo() {
-      this.submitted = true;
+        this.submitted = true;
 
-      if (this.todo.title?.trim() && this.todo.person?.id && this.todo.startDate && this.todo.priority) {
+        // Perform all validations
+        const isFormValid = 
+            this.isTitleValid() &&
+            this.todo.person?.id !== 0 && // Check if a person is selected (id is not 0 for placeholder)
+            !!this.todo.startDate && // Check if startDate is truthy
+            !!this.todo.priority; // Check if priority is truthy
 
-          const todoToSave: Todo = {
-              ...this.todo,
-              startDate: String(this.todo.startDate || ''),
-              endDate: this.todo.endDate ? String(this.todo.endDate) : undefined,
-          };
+        if (isFormValid) {
+            const todoToSave: Todo = {
+                ...this.todo,
+                startDate: String(this.todo.startDate || ''),
+                endDate: this.todo.endDate ? String(this.todo.endDate) : undefined,
+            };
 
-          if (todoToSave.id) {
-              // Update existing todo
-              this.todoService.updateTodo(todoToSave).subscribe({
-                  next: (updatedTodo) => {
-                      const index = this.findIndexById(updatedTodo.id);
-                      if (index > -1) {
-                          // Replace the item with the updated one from the db.json,
-                          // ensuring `todos` array immutability for change detection
-                          this.todos[index] = updatedTodo;
-                      }
-                      this.messageService.add({
-                          severity: 'success',
-                          summary: 'Successful',
-                          detail: 'Todo Updated',
-                          life: 3000,
-                      });
-                      this.todos = [...this.todos]; // Trigger change detection for array mutation
-                      this.cd.markForCheck();
-                      this.hideDialog();
-                  },
-                  error: (err) => {
-                      this.messageService.add({
-                          severity: 'error',
-                          summary: 'Error',
-                          detail: 'Failed to update todo.',
-                          life: 3000,
-                      });
-                      console.error('Error updating todo:', err);
-                  },
-              });
-          } else {
-              // Create new todo
-              this.todoService.createTodo(todoToSave).subscribe({
-                  next: (newTodo) => {
-                      this.todos.push(newTodo);
-                      this.messageService.add({
-                          severity: 'success',
-                          summary: 'Successful',
-                          detail: 'Todo Created',
-                          life: 3000,
-                      });
-                      this.todos = [...this.todos]; // Trigger change detection for array mutation
-                      this.cd.markForCheck();
-                      this.hideDialog();
-                  },
-                  error: (err) => {
-                      this.messageService.add({
-                          severity: 'error',
-                          summary: 'Error',
-                          detail: 'Failed to create todo.',
-                          life: 3000,
-                      });
-                      console.error('Error creating todo:', err);
-                  },
-              });
-          }
-      }
-  }
+            if (todoToSave.id) {
+                // Update existing todo
+                this.todoService.updateTodo(todoToSave).subscribe({
+                    next: (updatedTodo) => {
+                        const index = this.findIndexById(updatedTodo.id);
+                        if (index > -1) {
+                            this.todos[index] = updatedTodo;
+                        }
+                        this.messageService.add({
+                            severity: 'success',
+                            summary: 'Successful',
+                            detail: 'Todo Updated',
+                            life: 3000,
+                        });
+                        this.todos = [...this.todos];
+                        this.cd.markForCheck();
+                        this.hideDialog();
+                    },
+                    error: (err) => {
+                        this.messageService.add({
+                            severity: 'error',
+                            summary: 'Error',
+                            detail: 'Failed to update todo.',
+                            life: 3000,
+                        });
+                        console.error('Error updating todo:', err);
+                    },
+                });
+            } else {
+                // Create new todo
+                this.todoService.createTodo(todoToSave).subscribe({
+                    next: (newTodo) => {
+                        this.todos.push(newTodo);
+                        this.messageService.add({
+                            severity: 'success',
+                            summary: 'Successful',
+                            detail: 'Todo Created',
+                            life: 3000,
+                        });
+                        this.todos = [...this.todos];
+                        this.cd.markForCheck();
+                        this.hideDialog();
+                    },
+                    error: (err) => {
+                        this.messageService.add({
+                            severity: 'error',
+                            summary: 'Error',
+                            detail: 'Failed to create todo.',
+                            life: 3000,
+                        });
+                        console.error('Error creating todo:', err);
+                    },
+                });
+            }
+        } else {
+            // Form is invalid, display a general error message
+            this.messageService.add({
+                severity: 'error',
+                summary: 'Validation Error',
+                detail: 'Please correct the errors in the form.',
+                life: 3000,
+            });
+        }
+    }
 }

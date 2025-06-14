@@ -33,17 +33,16 @@
                 </ng-template>
                 <ng-template pTemplate="body" let-todo>
                     <tr>
-                        <td>{{ todo.id }}</td>
                         <td>{{ todo.title }}</td>
                         <td>{{ todo.person?.name }}</td>
                         <td>{{ todo.startDate }}</td>
-                        <td>{{ todo.endDate }}</td>
                         <td>{{ todo.priority }}</td>
                         <td>
                             @for (label of todo.labels; track $index) {
                                 <span>{{ label }}{{ !$last ? ', ' : '' }}</span>
                             }
                         </td>
+                        <td>{{ getTaskStatus(todo) }}</td>
                     </tr>
                 </ng-template>
             </p-table>
@@ -84,25 +83,17 @@
                 <th style="width: 3rem">
                     <p-tableHeaderCheckbox />
                 </th>
-                <th pSortableColumn="id" style="min-width: 8rem">
-                    ID
-                    <p-sortIcon field="id" />
-                </th>
                 <th pSortableColumn="title" style="min-width: 16rem">
                     Title
                     <p-sortIcon field="title" />
                 </th>
                 <th pSortableColumn="person.name" style="min-width: 12rem">
-                    Assigned To
+                    Team
                     <p-sortIcon field="person.name" />
                 </th>
                 <th pSortableColumn="startDate" style="min-width: 10rem">
                     Start Date
                     <p-sortIcon field="startDate" />
-                </th>
-                <th pSortableColumn="endDate" style="min-width: 10rem">
-                    End Date
-                    <p-sortIcon field="endDate" />
                 </th>
                 <th pSortableColumn="priority" style="min-width: 10rem">
                     Priority
@@ -112,6 +103,9 @@
                     Labels
                     <p-sortIcon field="labels" />
                 </th>
+                <th pSortableColumn="status" style="min-width: 10rem"> Status
+                    <p-sortIcon field="status" />
+                </th>
                 <th style="min-width: 8rem">Actions</th>
             </tr>
         </ng-template>
@@ -120,10 +114,8 @@
                 <td style="width: 3rem">
                     <p-tableCheckbox [value]="todo" />
                 </td>
-                <td>{{ todo.id }}</td>
                 <td>{{ todo.title }}</td>
                 <td>{{ todo.person?.name }}</td> <td>{{ todo.startDate | date : 'shortDate' }}</td>
-                <td>{{ todo.endDate ? (todo.endDate | date : 'shortDate') : 'N/A' }}</td>
                 <td>
                     <p-tag [value]="todo.priority" [severity]="getPrioritySeverity(todo.priority)" />
                 </td>
@@ -135,6 +127,8 @@
                         }
                     }
                 </td>
+                <td>
+                    <p-tag [value]="getTaskStatus(todo)" [severity]="getTaskStatusSeverity(todo)"/> </td>
                 <td>
                     <p-button icon="pi pi-pencil" class="mr-2" [rounded]="true" [outlined]="true" (click)="editTodo(todo)" />
                     <p-button icon="pi pi-trash" severity="danger" [rounded]="true" [outlined]="true" (click)="deleteTodo(todo)" />
@@ -157,9 +151,18 @@
             
             <div>
                 <label for="title" class="block font-bold mb-3">Title</label>
-                <input type="text" pInputText id="title" [(ngModel)]="todo.title" required autofocus styleClass="w-full" />
-                @if (submitted && !todo.title) {
-                    <small class="text-red-500">Title is required.</small>
+                <input 
+                    type="text" 
+                    pInputText 
+                    id="title" 
+                    [(ngModel)]="todo.title" 
+                    required 
+                    autofocus 
+                    [ngClass]="{'ng-invalid ng-dirty': submitted && !isTitleValid()}" 
+                    class="w-full" 
+                />
+                @if (submitted && !isTitleValid()) {
+                    <small class="p-error">Title must have at least 3 characters.</small>
                 }
             </div>
             
@@ -170,19 +173,25 @@
 
             <div>
                 <label for="person" class="block font-bold mb-3">Assigned Person</label>
-                <p-dropdown
-                    id="person"
-                    [(ngModel)]="todo.person"
-                    [options]="persons"
-                    optionLabel="name"
-                    [filter]="true"
-                    filterBy="name"
-                    placeholder="Select a Person"
-                    required
-                    styleClass="w-full"
-                ></p-dropdown>
-                @if (submitted && !todo.person.id) {
-                    <small class="text-red-500">Assigned person is required.</small>
+                <p-autoComplete 
+                    [(ngModel)]="todo.person" 
+                    [suggestions]="filteredPersons" 
+                    (completeMethod)="searchPerson($event)" 
+                    field="name" 
+                    [minLength]="1" 
+                    placeholder="Search for a person"
+                    [dropdown]="true"
+                    [showEmptyMessage]="true"
+                    emptyMessage="No persons found"
+                    [ngClass]="{'ng-invalid ng-dirty': submitted && !todo.person?.id}" 
+                    class="w-full"
+                >
+                    <ng-template let-person pTemplate="item">
+                        <div>{{ person.name }}</div>
+                    </ng-template>
+                </p-autoComplete>
+                @if (submitted && !todo.person?.id) {
+                    <small class="p-error">Assigned person is required.</small>
                 }
             </div>
 
@@ -190,15 +199,29 @@
                 
                 <div>
                     <label for="startDate" class="block font-bold mb-3">Start Date</label>
-                    <p-calendar id="startDate" [(ngModel)]="todo.startDate" dateFormat="yy-mm-dd" [showIcon]="true" styleClass="w-full" />
+                    <p-calendar 
+                        id="startDate" 
+                        [(ngModel)]="todo.startDate" 
+                        dateFormat="yy-mm-dd" 
+                        [showIcon]="true" 
+                        [ngClass]="{'ng-invalid ng-dirty': submitted && !todo.startDate}" 
+                        class="w-full" 
+                    />
                     @if (submitted && !todo.startDate) {
-                        <small class="text-red-500">Start Date is required.</small>
+                        <small class="p-error">Start Date is required.</small>
                     }
                 </div>
                 
                 <div>
                     <label for="endDate" class="block font-bold mb-3">End Date (Optional)</label>
-                    <p-calendar id="endDate" [(ngModel)]="todo.endDate" dateFormat="yy-mm-dd" [showIcon]="true" styleClass="w-full" />
+                    <p-calendar 
+                        id="endDate" 
+                        [(ngModel)]="todo.endDate" 
+                        dateFormat="yy-mm-dd" 
+                        [showIcon]="true" 
+                        [disabled]="todo.completed ?? false" 
+                        class="w-full" 
+                    />
                 </div>
             </div>
 
@@ -211,11 +234,11 @@
                     optionLabel="label"
                     optionValue="value"
                     placeholder="Select a Priority"
-                    required
-                    styleClass="w-full"
+                    [ngClass]="{'ng-invalid ng-dirty': submitted && !todo.priority}" 
+                    class="w-full"
                 />
                 @if (submitted && !todo.priority) {
-                    <small class="text-red-500">Priority is required.</small>
+                    <small class="p-error">Priority is required.</small>
                 }
             </div>
 
@@ -229,8 +252,13 @@
                     optionValue="value"
                     display="chip"
                     placeholder="Select Labels"
-                    styleClass="w-full"
+                    class="w-full"
                 />
+            </div>
+
+            <div class="field-checkbox">
+                <p-checkbox [(ngModel)]="todo.completed" [binary]="true" inputId="completed" (onChange)="onCompletedChange($event)"></p-checkbox>
+                <label for="completed" class="ml-2">Mark as Completed</label>
             </div>
         </div>
     </ng-template>
